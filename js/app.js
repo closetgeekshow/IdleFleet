@@ -26,7 +26,10 @@ document.addEventListener('alpine:init', () => {
     lastCEPS: constants.INITIAL_CREDITS,
 
     async init() {
-      this.addShip();
+      this.loadGame(); // Load saved state
+      if (this.ships.length === 0) {
+        this.addShip(); // Add initial ship if no saved state
+      }
       setInterval(() => { this.heartBeat() }, 1000);
       setInterval(() => { this.randomMsg() }, constants.RANDOM_MSG_INTERVAL * 1000);
       setInterval(() => { this.doAutoShip() }, constants.AUTO_SHIP_DURATION * 1000);
@@ -34,8 +37,12 @@ document.addEventListener('alpine:init', () => {
       setTimeout(() => { this.randomEvent() }, (5000 * 60) + (getRandomInt(0,3000)*60));
       // even though we dont show CEPS immediately, track immediately
       setInterval(() => { this.generateCEPS() }, constants.CEPS_DURATION * 1000);
+      // save every 60 seconds
+      setInterval(() => { this.saveGame() }, 60000); 
       this.messages = await (await fetch('/js/messages.json')).json();
+
     },
+
 
     heartBeat() {
       //heartBeat now handles all ship related travel announcements. 
@@ -114,6 +121,7 @@ document.addEventListener('alpine:init', () => {
       if(!this.canBuyMercantile) return;
       this.credits -= this.newMercantileCost;
       this.mercantileSkill++;
+      this.saveGame();
     },
 
     buyShip(count) {
@@ -122,16 +130,19 @@ document.addEventListener('alpine:init', () => {
         this.credits -= this.newShipCost;
         this.addShip();
       }
+      this.saveGame();
     },
 
     buyShipSpeed() {
       if(!this.canBuyShipSpeed) return;
       this.credits -= this.newShipSpeedCost;
       this.shipSpeed++;
+      this.saveGame();
     },
 
     doAutoShip() {
       if(this.autoShip) this.sendShips();
+      this.saveGame();
     },
 
     earnMoney() {
@@ -142,6 +153,7 @@ document.addEventListener('alpine:init', () => {
       //20 would be 3      
       let bonus = 1;
       if(this.mercantileSkill > 1) bonus += (this.mercantileSkill/10) + 1;
+      this.saveGame();
       return Math.floor(getRandomInt(100, 1000) * bonus);
     },
     
@@ -197,9 +209,9 @@ document.addEventListener('alpine:init', () => {
         this.addLog(`<strong class="bad">${msg}</strong>`);
         this.ships.splice(getRandomInt(0, this.ships.length),1);
       }
-
+      
       setTimeout(this.randomEvent, (5000 * 60) + (getRandomInt(0,3000)*60));
-
+      this.saveGame();
     },
 
     randomMsg() {
@@ -342,6 +354,50 @@ document.addEventListener('alpine:init', () => {
     numberFormat(s) {
       if(!window.Intl) return s;
       return new Intl.NumberFormat().format(s);
+    },
+
+    saveGame() {
+      const gameState = {
+        credits: this.credits,
+        ships: this.ships,
+        shipSpeed: this.shipSpeed,
+        mercantileSkill: this.mercantileSkill,
+        autoShip: this.autoShip,
+        shipSpeedFlipped: this.shipSpeedFlipped,
+        autoShipFlipped: this.autoShipFlipped
+      };
+      localStorage.setItem('idleFleetSave', JSON.stringify(gameState));
+    },
+    
+    loadGame() {
+      const savedGame = localStorage.getItem('idleFleetSave');
+      if (savedGame) {
+        const gameState = JSON.parse(savedGame);
+        this.credits = gameState.credits;
+        // Reconstruct ships with their methods
+        let mainThat = this;
+        this.ships = gameState.ships.map(ship => ({
+          ...ship,
+          trip() {
+            mainThat.addLog(`${this.name} departed...`);
+            this.available = false;
+            this.tripDuration = getRandomInt(constants.DURATION_MIN, constants.DURATION_MAX);
+            
+            if(mainThat.shipSpeed >= 2) {
+              let percentSavings = Math.min(getRandomInt(1, mainThat.shipSpeed), 95);
+              this.tripDuration -= Math.floor((this.tripDuration * (percentSavings/100)));
+            }
+            let now = new Date();
+            now.setSeconds(now.getSeconds() + this.tripDuration);
+            this.returnTime = now;
+          }
+        }));
+        this.shipSpeed = gameState.shipSpeed;
+        this.mercantileSkill = gameState.mercantileSkill;
+        this.autoShip = gameState.autoShip;
+        this.shipSpeedFlipped = gameState.shipSpeedFlipped;
+        this.autoShipFlipped = gameState.autoShipFlipped;
+      }
     }
 
   }))
@@ -354,3 +410,5 @@ function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min) + min); 
   //The maximum is exclusive and the minimum is inclusive
 }
+
+

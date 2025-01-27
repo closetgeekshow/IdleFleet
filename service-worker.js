@@ -5,6 +5,23 @@ importScripts(
 const {registerRoute} = workbox.routing;
 const {strategies} = workbox;
 
+// Add sync handler at the top level
+self.addEventListener('sync', event => {
+  if (event.tag === 'saveGame') {
+    event.waitUntil(
+      // This will handle offline saves
+      self.clients.matchAll().then(clients => {
+        clients.forEach(client => {
+          client.postMessage({
+            type: 'SYNC_SAVE',
+            timestamp: new Date().getTime()
+          });
+        });
+      })
+    );
+  }
+});
+
 registerRoute(
   	/\/$/,
 	new strategies.NetworkFirst()
